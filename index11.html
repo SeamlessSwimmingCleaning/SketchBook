@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>SketchBook</title>
+    <style>
+        :root { --ib-blue: #3a8ee6; --dark: #1a1a1c; --panel: #2c2c2e; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; position: fixed; font-family: -apple-system, sans-serif; background: #000; color: #fff; }
+        .view { display: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        .active-view { display: flex !important; flex-direction: column; }
+        
+        #home-view { background: #f2f2f7; color: #000; overflow-y: auto; }
+        .nav { padding: 45px 20px 10px; background: #fff; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; }
+        .art-item { background: #fff; border-radius: 8px; border: 1px solid #ddd; overflow: hidden; }
+        .art-item img { width: 100%; height: 110px; object-fit: contain; background: #eee; display: block; }
+
+        #draw-view { height: 100%; position: relative; }
+        #canvas-wrap { flex-grow: 1; position: relative; background: #fff; overflow: hidden; }
+        canvas { position: absolute; top: 0; left: 0; touch-action: none; width: 100% !important; height: 100% !important; }
+
+        .top { height: 44px; background: var(--dark); display: flex; justify-content: space-between; align-items: center; padding: 0 10px; z-index: 50; }
+        .side { position: absolute; left: 0; top: 44px; bottom: 60px; width: 48px; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; gap: 15px; padding-top: 15px; border-right: 1px solid #333; z-index: 60; }
+        .bottom { height: 60px; background: var(--dark); display: flex; justify-content: space-around; align-items: center; padding-bottom: env(safe-area-inset-bottom); z-index: 50; }
+        
+        .tool { background: none; border: none; color: white; font-size: 20px; outline: none; }
+        .active-tool { color: var(--ib-blue); }
+
+        .pop { position: absolute; bottom: 70px; left: 55px; right: 10px; background: var(--panel); border-radius: 12px; padding: 15px; display: none; flex-direction: column; z-index: 100; border: 1px solid #444; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        
+        #wheel-container { width: 180px; height: 180px; margin: 0 auto; position: relative; }
+        #wheel-canvas { width: 180px !important; height: 180px !important; border-radius: 50%; display: block; }
+
+        .l-row { display: flex; align-items: center; background: #3a3a3c; margin: 5px 0; padding: 10px; border-radius: 6px; }
+        .active-l { border: 2px solid var(--ib-blue); background: #48484a; }
+
+        .fx-btn { background: #444; color: white; border: none; padding: 8px; border-radius: 5px; margin: 2px; font-size: 11px; }
+
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 6px; background: #444; border-radius: 3px; margin: 10px 0; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; background: #fff; border-radius: 50%; border: 1px solid #000; }
+        
+        .pixelated { image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+
+    <div id="home-view" class="view active-view">
+        <div class="nav"><b>SketchBook Gallery</b><button onclick="localStorage.clear();location.reload()" style="color:red;border:none;background:none">Reset</button></div>
+        <div id="gallery" class="grid"></div>
+        <button style="position:fixed; bottom:30px; left:50%; transform:translateX(-50%); width:60px; height:60px; border-radius:50%; background:var(--ib-blue); color:#fff; font-size:35px; border:none; z-index:1000;" onclick="createNew()">+</button>
+    </div>
+
+    <div id="draw-view" class="view">
+        <div class="top">
+            <button class="tool" onclick="saveBack()" id="back-btn" style="font-size:14px; color:var(--ib-blue)">← Back</button>
+            <div style="display:flex; gap:15px;">
+                <button class="tool" onclick="undo()">↩️</button>
+                <button class="tool" onclick="redo()">↪️</button>
+            </div>
+            <div id="curr-col" style="width:22px; height:22px; border-radius:50%; background:#000; border:2px solid #fff;"></div>
+            <button class="tool" onclick="download()" style="font-size:14px">Export</button>
+        </div>
+
+        <div id="canvas-wrap"><canvas id="c-bg"></canvas></div>
+
+        <div class="side">
+            <button class="tool active-tool" id="t-brush" onclick="setMode('brush')">🖌️</button>
+            <button class="tool" id="t-eraser" onclick="setMode('eraser')">🧽</button>
+            <button class="tool" id="t-bucket" onclick="setMode('bucket')">🪣</button>
+            <button class="tool" onclick="toggleP('p-color')">🎨</button>
+            <button class="tool" onclick="toggleP('p-brush')">⚙️</button>
+            <button class="tool" onclick="toggleP('p-fx')">✨</button>
+            <button class="tool" onclick="clearL()" style="margin-top:auto; padding-bottom:10px; color:red">🗑️</button>
+        </div>
+
+        <div id="p-fx" class="pop">
+            <b style="font-size:14px; margin-bottom:10px">Layer Effects</b>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                <button class="fx-btn" onclick="applyFX('none')">Normal</button>
+                <button class="fx-btn" onclick="applyFX('blur(5px)')">Blur</button>
+                <button class="fx-btn" onclick="applyFX('drop-shadow(0 0 10px gold)')">Glow (Gold)</button>
+                <button class="fx-btn" onclick="applyFX('grayscale(100%)')">B&W</button>
+                <button class="fx-btn" onclick="applyFX('invert(100%)')">Invert</button>
+                <button class="fx-btn" onclick="applyFX('sepia(100%)')">Sepia</button>
+                <button class="fx-btn" onclick="applyFX('hue-rotate(180deg)')">Color Swap</button>
+                <button class="fx-btn" onclick="togglePixelate()">Pixelate</button>
+            </div>
+        </div>
+
+        <div id="p-color" class="pop">
+            <div id="wheel-container"><canvas id="wheel-canvas" width="180" height="180"></canvas></div>
+            <label style="font-size:12px; margin-top:15px; display:block">Darkness</label>
+            <input type="range" id="i-dark" min="0" max="100" value="100" oninput="updateColorFinal()">
+            <div id="hex-preview" style="height:35px; background:#000; border-radius:4px; margin-top:10px; border:1px solid #fff"></div>
+        </div>
+
+        <div id="p-brush" class="pop">
+            <label style="font-size:12px">Thickness: <span id="v-size">5</span></label>
+            <input type="range" id="i-size" min="1" max="100" value="5" oninput="document.getElementById('v-size').innerText=this.value">
+            <label style="font-size:12px; margin-top:10px">Opacity: <span id="v-op">100</span>%</label>
+            <input type="range" id="i-op" min="1" max="100" value="100" oninput="document.getElementById('v-op').innerText=this.value">
+        </div>
+
+        <div id="p-layer" class="pop">
+            <button onclick="addLayer()" style="background:var(--ib-blue); color:white; border:none; padding:10px; border-radius:4px; margin-bottom:10px; width:100%">+ Add Layer</button>
+            <div id="layer-list" style="max-height: 150px; overflow-y: auto;"></div>
+            <hr style="border:0; border-top:1px solid #555; margin:10px 0;">
+            <label style="font-size:12px">Selected Layer Opacity: <span id="v-l-op">100</span>%</label>
+            <input type="range" id="i-layer-op" min="0" max="100" value="100" oninput="changeLayerOpacity(this.value)">
+        </div>
+
+        <div class="bottom">
+            <button class="tool" onclick="toggleP('p-layer')">📑 Layers</button>
+            <div style="font-size:10px; opacity:0.5">SketchBook v5.0</div>
+        </div>
+    </div>
+
+    <script>
+        let layerData = [], activeIdx = 0, isDown = false, mode = 'brush', baseHue = 0, finalCol = '#000000', editIdx = -1;
+        let undoStack = [], redoStack = [];
+
+        function saveState() {
+            undoStack.push(layerData[activeIdx].canvas.toDataURL());
+            if (undoStack.length > 15) undoStack.shift();
+            redoStack = [];
+        }
+
+        function undo() {
+            if (undoStack.length <= 1) return;
+            redoStack.push(undoStack.pop());
+            const img = new Image();
+            img.onload = () => {
+                layerData[activeIdx].ctx.clearRect(0,0,layerData[activeIdx].canvas.width, layerData[activeIdx].canvas.height);
+                layerData[activeIdx].ctx.drawImage(img, 0, 0);
+            };
+            img.src = undoStack[undoStack.length - 1];
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const data = redoStack.pop();
+            undoStack.push(data);
+            const img = new Image();
+            img.onload = () => {
+                layerData[activeIdx].ctx.clearRect(0,0,layerData[activeIdx].canvas.width, layerData[activeIdx].canvas.height);
+                layerData[activeIdx].ctx.drawImage(img, 0, 0);
+            };
+            img.src = data;
+        }
+
+        function applyFX(filter) {
+            layerData[activeIdx].canvas.style.filter = filter;
+        }
+
+        function togglePixelate() {
+            const c = layerData[activeIdx].canvas;
+            c.classList.toggle('pixelated');
+            c.style.filter = c.classList.contains('pixelated') ? 'contrast(150%) brightness(110%)' : 'none';
+        }
+
+        function changeLayerOpacity(val) {
+            document.getElementById('v-l-op').innerText = val;
+            layerData[activeIdx].canvas.style.opacity = val / 100;
+        }
+
+        function show(id) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
+            document.getElementById(id).classList.add('active-view');
+            if(id === 'draw-view') { setTimeout(initDraw, 50); } else { renderGal(); }
+        }
+
+        function createNew() { editIdx = -1; show('draw-view'); }
+
+        function initDraw() {
+            const wrap = document.getElementById('canvas-wrap');
+            const w = wrap.clientWidth, h = wrap.clientHeight;
+            wrap.innerHTML = '<canvas id="c-bg"></canvas>';
+            const bg = document.getElementById('c-bg');
+            bg.width = w; bg.height = h;
+            bg.getContext('2d').fillStyle = "#ffffff"; bg.getContext('2d').fillRect(0,0,w,h);
+            layerData = []; undoStack = []; redoStack = [];
+            addLayer(); 
+            if(editIdx !== -1) {
+                const art = JSON.parse(localStorage.getItem('sketch_art') || '[]');
+                const img = new Image();
+                img.onload = () => { layerData[0].ctx.drawImage(img, 0, 0); saveState(); updateLayerUI(); };
+                img.src = art[editIdx];
+            } else { saveState(); }
+            drawWheel();
+        }
+
+        function addLayer() {
+            const wrap = document.getElementById('canvas-wrap');
+            const c = document.createElement('canvas');
+            c.width = wrap.clientWidth; c.height = wrap.clientHeight;
+            wrap.appendChild(c);
+            const layer = { canvas: c, ctx: c.getContext('2d'), vis: true };
+            layerData.push(layer);
+            activeIdx = layerData.length - 1;
+            c.addEventListener('touchstart', handleInput, {passive:false});
+            c.addEventListener('touchmove', handleInput, {passive:false});
+            c.addEventListener('touchend', () => { if(isDown) saveState(); isDown = false; layerData[activeIdx].ctx.beginPath(); });
+            c.addEventListener('mousedown', handleInput);
+            updateLayerUI();
+        }
+
+        function drawWheel() {
+            const canvas = document.getElementById('wheel-canvas');
+            const ctx = canvas.getContext('2d');
+            for (let a = 0; a < 360; a++) {
+                ctx.beginPath(); ctx.moveTo(90, 90);
+                ctx.arc(90, 90, 85, (a - 2) * Math.PI / 180, (a) * Math.PI / 180);
+                ctx.fillStyle = `hsl(${a}, 100%, 50%)`; ctx.fill();
+            }
+        }
+
+        function pickColor(e) {
+            const rect = document.getElementById('wheel-canvas').getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            baseHue = Math.atan2(y - 90, x - 90) * (180 / Math.PI);
+            updateColorFinal();
+            setMode('brush');
+        }
+        document.getElementById('wheel-canvas').addEventListener('mousedown', pickColor);
+        document.getElementById('wheel-canvas').addEventListener('touchstart', pickColor);
+
+        function updateColorFinal() {
+            finalCol = `hsl(${baseHue}, 100%, ${document.getElementById('i-dark').value/2}%)`;
+            document.getElementById('hex-preview').style.background = finalCol;
+            document.getElementById('curr-col').style.background = finalCol;
+        }
+
+        function handleInput(e) {
+            if(e.type === 'mousedown' || e.type === 'touchstart') isDown = true;
+            if(!isDown || !layerData[activeIdx].vis) return;
+            if(e.cancelable) e.preventDefault();
+            const rect = layerData[activeIdx].canvas.getBoundingClientRect();
+            const x = Math.round((e.touches ? e.touches[0].clientX : e.clientX) - rect.left);
+            const y = Math.round((e.touches ? e.touches[0].clientY : e.clientY) - rect.top);
+            if(mode === 'bucket' && (e.type === 'mousedown' || e.type === 'touchstart')) {
+                floodFill(x, y); saveState(); isDown = false; return;
+            }
+            if(mode !== 'bucket') drawMove(x, y);
+        }
+
+        function drawMove(x, y) {
+            const ctx = layerData[activeIdx].ctx;
+            ctx.globalCompositeOperation = mode === 'eraser' ? 'destination-out' : 'source-over';
+            ctx.strokeStyle = finalCol;
+            ctx.lineWidth = document.getElementById('i-size').value;
+            ctx.globalAlpha = document.getElementById('i-op').value / 100;
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y);
+        }
+
+        function floodFill(startX, startY) {
+            const ctx = layerData[activeIdx].ctx;
+            const imgData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+            const targetColor = getPixel(imgData, startX, startY);
+            const fillColor = parseColor(finalCol);
+            if (colorsMatch(targetColor, fillColor)) return;
+            const pixelsToCheck = [startX, startY];
+            while (pixelsToCheck.length > 0) {
+                const y = pixelsToCheck.pop(); const x = pixelsToCheck.pop();
+                const currentColor = getPixel(imgData, x, y);
+                if (colorsMatch(currentColor, targetColor)) {
+                    setPixel(imgData, x, y, fillColor);
+                    if (x > 0) pixelsToCheck.push(x - 1, y);
+                    if (x < imgData.width - 1) pixelsToCheck.push(x + 1, y);
+                    if (y > 0) pixelsToCheck.push(x, y - 1);
+                    if (y < imgData.height - 1) pixelsToCheck.push(x, y + 1);
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        function getPixel(data, x, y) {
+            const i = (y * data.width + x) * 4;
+            return [data.data[i], data.data[i+1], data.data[i+2], data.data[i+3]];
+        }
+        function setPixel(data, x, y, col) {
+            const i = (y * data.width + x) * 4;
+            data.data[i] = col[0]; data.data[i+1] = col[1]; data.data[i+2] = col[2]; data.data[i+3] = 255;
+        }
+        function colorsMatch(a, b) { return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]; }
+        function parseColor(hsl) {
+            const temp = document.createElement('div'); temp.style.color = hsl; document.body.appendChild(temp);
+            const rgb = window.getComputedStyle(temp).color.match(/\d+/g).map(Number);
+            document.body.removeChild(temp); return [...rgb, 255];
+        }
+
+        function updateLayerUI() {
+            const list = document.getElementById('layer-list');
+            list.innerHTML = '';
+            [...layerData].reverse().forEach((l, i) => {
+                const realIdx = layerData.length - 1 - i;
+                const row = document.createElement('div');
+                row.className = `l-row ${realIdx === activeIdx ? 'active-l' : ''}`;
+                row.onclick = () => { activeIdx = realIdx; updateLayerUI(); updateOpacitySlider(); };
+                row.innerHTML = `<span onclick="toggleV(${realIdx});event.stopPropagation()">${l.vis?'👁️':'❌'}</span><span style="margin-left:10px">Layer ${realIdx+1}</span>`;
+                list.appendChild(row);
+            });
+        }
+
+        function updateOpacitySlider() {
+            const op = layerData[activeIdx].canvas.style.opacity || 1;
+            document.getElementById('i-layer-op').value = op * 100;
+            document.getElementById('v-l-op').innerText = Math.round(op * 100);
+        }
+
+        function toggleV(idx) {
+            layerData[idx].vis = !layerData[idx].vis;
+            layerData[idx].canvas.style.display = layerData[idx].vis ? "block" : "none";
+            updateLayerUI();
+        }
+
+        function setMode(m) {
+            mode = m;
+            document.querySelectorAll('.tool').forEach(t => t.classList.remove('active-tool'));
+            document.getElementById('t-' + m).classList.add('active-tool');
+        }
+
+        function toggleP(id) {
+            const p = document.getElementById(id); const isVisible = p.style.display === 'flex';
+            document.querySelectorAll('.pop').forEach(el => el.style.display = 'none');
+            p.style.display = isVisible ? 'none' : 'flex';
+        }
+
+        function saveBack() {
+            const btn = document.getElementById('back-btn');
+            btn.innerText = "Saving...";
+            setTimeout(() => {
+                const out = document.createElement('canvas'); const bg = document.getElementById('c-bg');
+                out.width = bg.width; out.height = bg.height;
+                const octx = out.getContext('2d'); octx.drawImage(bg, 0, 0);
+                layerData.forEach(l => { if(l.vis) {
+                    octx.save();
+                    octx.globalAlpha = l.canvas.style.opacity || 1;
+                    octx.filter = l.canvas.style.filter || 'none';
+                    octx.drawImage(l.canvas, 0, 0); 
+                    octx.restore();
+                }});
+                let data = JSON.parse(localStorage.getItem('sketch_art') || '[]');
+                if(editIdx !== -1) data.splice(editIdx, 1);
+                data.unshift(out.toDataURL('image/jpeg', 0.6));
+                localStorage.setItem('sketch_art', JSON.stringify(data.slice(0, 15)));
+                show('home-view');
+            }, 150);
+        }
+
+        function renderGal() {
+            const g = document.getElementById('gallery'); g.innerHTML = '';
+            const data = JSON.parse(localStorage.getItem('sketch_art') || '[]');
+            data.forEach((img, i) => {
+                const item = document.createElement('div'); item.className = 'art-item';
+                item.onclick = () => { editIdx = i; show('draw-view'); };
+                item.innerHTML = `<img src="${img}"><div style="padding:5px; font-size:10px; color:#333">Sketch ${i+1}</div>`;
+                g.appendChild(item);
+            });
+        }
+
+        function clearL() { if(confirm("Clear this layer?")) { layerData[activeIdx].ctx.clearRect(0,0,10000,10000); saveState(); } }
+        function download() {
+            const out = document.createElement('canvas'); const bg = document.getElementById('c-bg');
+            out.width = bg.width; out.height = bg.height;
+            const octx = out.getContext('2d'); octx.drawImage(bg, 0, 0);
+            layerData.forEach(l => {
+                octx.save();
+                octx.globalAlpha = l.canvas.style.opacity || 1;
+                octx.filter = l.canvas.style.filter || 'none';
+                octx.drawImage(l.canvas, 0, 0);
+                octx.restore();
+            });
+            const a = document.createElement('a'); a.download = 'sketch.png'; a.href = out.toDataURL(); a.click();
+        }
+
+        window.addEventListener('mousemove', handleInput);
+        window.addEventListener('mouseup', () => { if(isDown) saveState(); isDown = false; if(layerData[activeIdx]) layerData[activeIdx].ctx.beginPath(); });
+        window.onload = renderGal;
+    </script>
+</body>
+</html>
